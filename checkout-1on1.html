@@ -654,13 +654,16 @@
         const confirmResult = await stripe.confirmUsBankAccountPayment(fcClientSecret);
         if (confirmResult.error) throw new Error(confirmResult.error.message);
 
-        const bankName   = achPaymentMethod?.us_bank_account?.bank_name ?? 'Bank';
-        const last4      = achPaymentMethod?.us_bank_account?.last4 ?? '****';
+        const pi       = confirmResult.paymentIntent;
+        const bankName = achPaymentMethod?.us_bank_account?.bank_name ?? 'Bank';
+        const last4    = achPaymentMethod?.us_bank_account?.last4 ?? '****';
 
         btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> ${bankName} ···${last4} connected`;
         btn.classList.add('connected');
-        statusEl.textContent = 'Bank account verified and transfer of $130 confirmed.';
-        statusEl.className   = 'bank-status success';
+        statusEl.textContent = pi?.status === 'processing'
+          ? 'Bank account verified and transfer of $130 confirmed.'
+          : 'Bank connected — please confirm your booking below.';
+        statusEl.className = 'bank-status success';
 
       } catch (err) {
         statusEl.textContent = err.message ?? 'Could not connect bank. Please try again.';
