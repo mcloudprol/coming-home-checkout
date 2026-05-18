@@ -146,7 +146,6 @@
       margin: 1.6rem 0;
     }
 
-    /* Info callout — no charge reassurance */
     .info-callout {
       display: flex;
       align-items: flex-start;
@@ -176,7 +175,6 @@
       color: var(--sage-deep);
     }
 
-    /* Bank connection area */
     .bank-area {
       margin-bottom: 1.6rem;
     }
@@ -226,7 +224,6 @@
     .bank-status.success { color: var(--sage-deep); }
     .bank-status.error   { color: #a03030; }
 
-    /* Submit */
     .submit-btn {
       width: 100%;
       padding: 0.8rem;
@@ -260,7 +257,6 @@
 
     .footer-note a { color: var(--sage); text-decoration: none; }
 
-    /* Success state */
     .success-state {
       display: none;
       text-align: center;
@@ -385,10 +381,11 @@
 
   <script>
     // ─────────────────────────────────────────────
-    // CONFIGURATION — update webhook URL when new Make scenario is ready
+    // CONFIGURATION
     // ─────────────────────────────────────────────
-    const STRIPE_PUBLISHABLE_KEY  = 'pk_live_51RoSrW29rgtIaHX0YX2BkttKdqiKH1medXhLvPlqER9sPdTGPWNb8RCpRQByDzPuL2vSdv8OJmm3W4eE9AUrVfkJ00iouHjfty';
-    const MAKE_WEBHOOK_URL        = 'https://hook.us2.make.com/2lutm35o2ufl4zy2c9y3wxqkk2nulkg0';
+    const STRIPE_PUBLISHABLE_KEY      = 'pk_live_51RoSrW29rgtIaHX0YX2BkttKdqiKH1medXhLvPlqER9sPdTGPWNb8RCpRQByDzPuL2vSdv8OJmm3W4eE9AUrVfkJ00iouHjfty';
+    const MAKE_WEBHOOK_URL            = 'https://hook.us2.make.com/2lutm35o2ufl4zy2c9y3wxqkk2nulkg0';
+    const MAKE_COMPLETION_WEBHOOK_URL = 'https://hook.us2.make.com/p20j3yvvs3bxkv5q27vke7607hunq2cn';
     // ─────────────────────────────────────────────
 
     const stripe = Stripe(STRIPE_PUBLISHABLE_KEY);
@@ -410,13 +407,27 @@
       document.getElementById('success-state').classList.add('visible');
     }
 
-    async function postTo(payload) {
-      const r = await fetch(MAKE_WEBHOOK_URL, {
+    async function post(payload) {
+      return postTo(MAKE_WEBHOOK_URL, payload);
+    }
+
+    async function postCompletion(payload) {
+      return postTo(MAKE_COMPLETION_WEBHOOK_URL, payload);
+    }
+
+    async function postTo(url, payload) {
+      const r = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       return r.ok ? r.json().catch(() => ({})) : {};
+    }
+
+    function setStatus(msg, type) {
+      const el = document.getElementById('bank-status');
+      el.textContent = msg;
+      el.className = 'bank-status' + (type ? ' ' + type : '');
     }
 
     // ── Step 1: Connect bank via Financial Connections ────────────────────
@@ -435,13 +446,11 @@
       setStatus('Opening your bank connection…', '');
 
       try {
-        // Ask Make to create an ACH SetupIntent → returns client_secret
-        const d = await postTo({ name, email, phone, step: 'create_ach_setup_intent' });
+        const d = await post({ name, email, phone, step: 'create_ach_setup_intent' });
         if (!d.clientSecret) throw new Error('No setup secret returned. Check your Make scenario.');
 
         setupIntentClientSecret = d.clientSecret;
 
-        // Open Stripe Financial Connections modal for setup (not payment)
         const result = await stripe.collectBankAccountForSetup({
           clientSecret: setupIntentClientSecret,
           params: {
@@ -453,7 +462,6 @@
 
         if (result.error) throw new Error(result.error.message);
 
-        // Financial Connections verified — grab the payment method
         achPaymentMethod = result.setupIntent.payment_method;
         const bankName   = achPaymentMethod?.us_bank_account?.bank_name ?? 'Bank';
         const last4      = achPaymentMethod?.us_bank_account?.last4 ?? '****';
@@ -466,8 +474,6 @@
         btn.classList.add('connected');
 
         setStatus('Bank verified. Click below to save it to your profile.', 'success');
-
-        // Enable the save button now that the bank is connected
         document.getElementById('submit-btn').disabled = false;
 
       } catch (err) {
@@ -476,7 +482,7 @@
       }
     }
 
-    // ── Step 2: Confirm the SetupIntent to finalize saving ────────────────
+    // ── Step 2: Confirm the SetupIntent and log to Sheets ────────────────
     async function handleSubmit() {
       const name  = document.getElementById('name').value.trim();
       const email = document.getElementById('email').value.trim();
@@ -491,7 +497,6 @@
       setSubmitLoading(true);
 
       try {
-        // Confirm the SetupIntent — this finalizes saving the bank account
         const result = await stripe.confirmUsBankAccountSetup(setupIntentClientSecret);
 
         if (result.error) {
@@ -503,8 +508,8 @@
         const bankName = achPaymentMethod?.us_bank_account?.bank_name ?? 'Bank';
         const last4    = achPaymentMethod?.us_bank_account?.last4 ?? '****';
 
-        // Notify Make that setup is complete → log to Google Sheet
-        await postTo({
+        // Send to the COMPLETION scenario for Google Sheets logging
+        await postCompletion({
           name, email, phone,
           paymentChoice: 'ach_saved',
           paymentMethodId: result.setupIntent.payment_method ?? achPaymentMethod.id,
@@ -521,12 +526,6 @@
         alert('Something went wrong. Please try again or reach out to us directly.');
         setSubmitLoading(false);
       }
-    }
-
-    function setStatus(msg, type) {
-      const el = document.getElementById('bank-status');
-      el.textContent = msg;
-      el.className = 'bank-status' + (type ? ' ' + type : '');
     }
   </script>
 </body>
